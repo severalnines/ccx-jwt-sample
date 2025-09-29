@@ -17,7 +17,7 @@ CCX must be pre-configured with a client-id and public key, with env values in u
 The demo app will be configured with these too, e.g. these are the defaults:
 
 ```sh
-$ go run . -ccx=https://ccx.s9s-dev.net/api/auth -cloud=mycloud -key=key.pem
+$ go run . -ccx=https://ccx.s9s-dev.net/api/auth -cloud=mycloud -keyfile=key.pem
 ```
 
 When the user information is provided with the web form, the app:
