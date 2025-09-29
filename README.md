@@ -4,9 +4,16 @@ Demonstration of logging into CCX using a JWT. The app simulates an integrator's
 
 CCX must be pre-configured with a client-id and public key, with env values in user service:
 
-```sh
-JWT_PUBLIC_KEY_ID="mycloud"
-JWT_PUBLIC_KEY_PEM="<PUBLIC KEY>"
+```yaml
+        - name: JWT_PUBLIC_KEY_ID
+          value: "mycloud"
+        - name: JWT_PUBLIC_KEY_PEM
+          value: |
+            -----BEGIN RSA PUBLIC KEY-----
+            MIGJAoGBAJQEr0mhiSI1mbnHsp5LEWY+oNcqi+81iji+LFCLAsKqeW3s+ZWVFc2X
+            iQssIj4lTRUS1fzZ7q6upmWdejt4HkNJtjG1ry308xFy/D9GOqlpS+qd9X6OchSU
+            t+juEb/RgTF6E2rMPlPEpdLJjH5Vlv7HbLhpPxQ1EmNhvo4AuMVbAgMBAAE=
+            -----END RSA PUBLIC KEY-----
 ```
 
 The demo app will be configured with these too, e.g. these are the defaults:
