@@ -68,7 +68,7 @@ func sendError(w http.ResponseWriter, msg string, err error) {
 func main() {
 	bind := flag.String("bind", "0.0.0.0:8088", "where to bind")
 	cloud := flag.String("cloud", "mycloud", "cloud name, configured in CCX")
-	keyPath := flag.String("keyfile", "key.pem", "path of pruivate key")
+	keyPath := flag.String("keyfile", "key.pem", "path of private key")
 	ccxURL := flag.String("ccx", "https://ccx.s9s-dev.net/api/auth", "CCX auth URL")
 
 	flag.Parse()
