@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"embed"
 	"encoding/json"
@@ -70,8 +71,16 @@ func main() {
 	cloud := flag.String("cloud", "mycloud", "cloud name, configured in CCX")
 	keyPath := flag.String("keyfile", "key.pem", "path of private key")
 	ccxURL := flag.String("ccx", "https://ccx.s9s-dev.net/api/auth", "CCX auth URL")
+	insecure := flag.Bool("insecure", false, "skip TLS verification when calling CCX (local dev only)")
 
 	flag.Parse()
+
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	if *insecure {
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
 
 	keyBytes, err := os.ReadFile(*keyPath)
 	if err != nil {
@@ -142,7 +151,7 @@ func main() {
 
 		// post the JWT to CCX
 
-		client := &http.Client{Timeout: 5 * time.Second}
+		client := httpClient
 		in := &jwtLoginRequest{
 			Issuer:    *cloud,
 			Token:     token,
