@@ -77,9 +77,9 @@ func main() {
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	if *insecure {
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		httpClient.Transport = transport
 	}
 
 	keyBytes, err := os.ReadFile(*keyPath)
