@@ -114,44 +114,39 @@ func main() {
 		http.ServeFileFS(w, r, files, r.URL.Path)
 	})
 
-	mux.HandleFunc("POST /login-to-ccx", func(w http.ResponseWriter, r *http.Request) {
-		// read the user details - normally this would come from the user's session
-
+	// makeLoginURL reads the user details from the form (normally these would
+	// come from the user's session), creates a JWT, posts it to CCX to check
+	// that it is accepted, and returns the URL that logs the browser into CCX.
+	makeLoginURL := func(r *http.Request) (string, error) {
 		err := r.ParseForm()
 		if err != nil {
-			sendError(w, "parse form", err)
-			return
+			return "", fmt.Errorf("parse form: %w", err)
 		}
 
 		userID := r.Form.Get("userid")
 		if userID == "" {
-			sendError(w, "CCX post", fmt.Errorf("missing userid"))
-			return
+			return "", fmt.Errorf("missing userid")
 		}
 
 		name1 := r.Form.Get("name1")
 		if name1 == "" {
-			sendError(w, "CCX post", fmt.Errorf("missing name1"))
-			return
+			return "", fmt.Errorf("missing name1")
 		}
 
 		name2 := r.Form.Get("name2")
 		if name2 == "" {
-			sendError(w, "CCX post", fmt.Errorf("missing name2"))
-			return
+			return "", fmt.Errorf("missing name2")
 		}
 
 		// create the JWT
 
 		token, err := createJWT(*cloud, userID, 15*time.Minute, privKey)
 		if err != nil {
-			sendError(w, "create JWT", err)
-			return
+			return "", fmt.Errorf("create JWT: %w", err)
 		}
 
 		// post the JWT to CCX
 
-		client := httpClient
 		in := &jwtLoginRequest{
 			Issuer:    *cloud,
 			Token:     token,
@@ -161,37 +156,56 @@ func main() {
 
 		var buf bytes.Buffer
 		if err := json.NewEncoder(&buf).Encode(in); err != nil {
-			sendError(w, "json encode", err)
-			return
+			return "", fmt.Errorf("json encode: %w", err)
 		}
 
 		req, err := http.NewRequest(http.MethodPost, *ccxURL+"/jwt-login", &buf)
 		if err != nil {
-			sendError(w, "make HTTP resqueset", err)
-			return
+			return "", fmt.Errorf("make HTTP request: %w", err)
 		}
 
-		resp, err := client.Do(req)
+		resp, err := httpClient.Do(req)
 		if err != nil {
-			sendError(w, "post to CCX", err)
-			return
+			return "", fmt.Errorf("post to CCX: %w", err)
 		}
 		defer resp.Body.Close()
 
 		// check that the JWT was accepted
 
 		if resp.StatusCode != http.StatusOK {
-			sendError(w, "CCX post", fmt.Errorf("status code: %d", resp.StatusCode))
-			w.Write([]byte("\n"))
-			io.Copy(w, resp.Body)
+			body, _ := io.ReadAll(resp.Body)
+			return "", fmt.Errorf("CCX post: status code: %d\n%s", resp.StatusCode, body)
+		}
+
+		return fmt.Sprintf("%s/jwt-login?jwt=%s&issuer=%s", *ccxURL, token, *cloud), nil
+	}
+
+	mux.HandleFunc("POST /login-to-ccx", func(w http.ResponseWriter, r *http.Request) {
+		loginURL, err := makeLoginURL(r)
+		if err != nil {
+			sendError(w, "login", err)
 			return
 		}
 
-		// send the user to CCX with the token
+		// send the user to CCX with the token - a top-level navigation, so the
+		// session cookie is accepted with the browser's default SameSite=Lax
 
-		redirectTo := fmt.Sprintf("%s/jwt-login?jwt=%s&issuer=%s", *ccxURL, token, *cloud)
+		http.Redirect(w, r, loginURL, http.StatusSeeOther)
+	})
 
-		http.Redirect(w, r, redirectTo, http.StatusSeeOther)
+	mux.HandleFunc("POST /embed-ccx", func(w http.ResponseWriter, r *http.Request) {
+		loginURL, err := makeLoginURL(r)
+		if err != nil {
+			http.Error(w, "login: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+
+		// the page sets this URL as the iframe src - a cross-site request that
+		// is not a top-level navigation, so the browser rejects the session
+		// cookie unless CCX is configured with SESSION_COOKIE_SAMESITE=none
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"url": loginURL})
 	})
 
 	// serve

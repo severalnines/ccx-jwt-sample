@@ -8,16 +8,48 @@
   <meta name="description" content="Afero">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
   <meta name="theme-color" content="rgb(118, 145, 158)">
+
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; padding: 8px; box-sizing: border-box; }
+    #ccx { flex: 1; width: 100%; border: 1px solid rgb(118, 145, 158); }
+  </style>
 </head>
 
 <body>
 
-  <form method="post" action="/login-to-ccx">
+  <form id="login-form" method="post" action="/login-to-ccx">
     <p><input type="text" name="userid" placeholder="user-id" required> (pretend that the user is already logged in with this ID)</p>
     <p><input type="text" name="name1" placeholder="user-firstname" required></p>
     <p><input type="text" name="name2" placeholder="user-lastname" required></p>
-    <p><button type="submit">login</button></p>
+    <p>
+      <button type="submit">login (redirect)</button>
+      <button type="button" id="iframe-login">login (iframe)</button>
+    </p>
   </form>
+
+  <iframe id="ccx"></iframe>
+
+  <script>
+    document.getElementById('iframe-login').addEventListener('click', async () => {
+      const form = document.getElementById('login-form');
+      if (!form.reportValidity()) {
+        return;
+      }
+
+      const resp = await fetch('/embed-ccx', {
+        method: 'POST',
+        body: new URLSearchParams(new FormData(form)),
+      });
+      if (!resp.ok) {
+        alert(await resp.text());
+        return;
+      }
+
+      const { url } = await resp.json();
+      document.getElementById('ccx').src = url;
+    });
+  </script>
 
 </body>
 
