@@ -79,4 +79,4 @@ To test it against a local CCX (e.g. in docker-desktop k8s):
 
 4. Run the app with `-insecure` as above, open http://localhost:8088, fill the form and press `login (iframe)`.
 
-To see the original problem reproduce, remove `SESSION_COOKIE_SAMESITE` again: in Chrome the iframe then shows the CCX login form instead of a session, and DevTools → Network → `jwt-login` shows the `Set-Cookie` being blocked with a `SameSite` warning. Firefox partitions third-party cookies instead of blocking them, so the iframe works there either way — don't verify with Firefox alone.
+Note: only Chromium-based browsers block the cross-site cookie, so the `SESSION_COOKIE_SAMESITE` override is only needed there. Firefox partitions third-party cookies instead of blocking them, and the iframe works without it.
