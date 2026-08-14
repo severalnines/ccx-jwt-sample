@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -27,7 +28,8 @@ import (
 var webFiles embed.FS
 
 var (
-	ErrBadPEMData = errors.New("malformed PEM data")
+	ErrBadPEMData   = errors.New("malformed PEM data")
+	ErrInvalidInput = errors.New("invalid input")
 )
 
 type jwtLoginRequest struct {
@@ -57,13 +59,14 @@ func createJWT(issuer, subject string, exp time.Duration, key *rsa.PrivateKey) (
 	return jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
 }
 
+// sendError reports a failed login: 400 for bad user input, 502 when the
+// upstream CCX call failed.
 func sendError(w http.ResponseWriter, msg string, err error) {
-	w.WriteHeader(200)
-	_, err = w.Write([]byte(msg + ", " + err.Error()))
-	if err != nil {
-		slog.Error("write to client", "err", err)
-		os.Exit(1)
+	status := http.StatusBadGateway
+	if errors.Is(err, ErrInvalidInput) {
+		status = http.StatusBadRequest
 	}
+	http.Error(w, msg+": "+err.Error(), status)
 }
 
 func main() {
@@ -74,6 +77,12 @@ func main() {
 	insecure := flag.Bool("insecure", false, "skip TLS verification when calling CCX (local dev only)")
 
 	flag.Parse()
+
+	authURL, err := url.Parse(*ccxURL)
+	if err != nil {
+		slog.Error("parse CCX URL", "err", err)
+		os.Exit(1)
+	}
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	if *insecure {
@@ -120,23 +129,17 @@ func main() {
 	makeLoginURL := func(r *http.Request) (string, error) {
 		err := r.ParseForm()
 		if err != nil {
-			return "", fmt.Errorf("parse form: %w", err)
+			return "", fmt.Errorf("parse form: %w: %w", ErrInvalidInput, err)
 		}
 
 		userID := r.Form.Get("userid")
 		if userID == "" {
-			return "", fmt.Errorf("missing userid")
+			return "", fmt.Errorf("missing userid: %w", ErrInvalidInput)
 		}
 
+		// first/last name are optional
 		name1 := r.Form.Get("name1")
-		if name1 == "" {
-			return "", fmt.Errorf("missing name1")
-		}
-
 		name2 := r.Form.Get("name2")
-		if name2 == "" {
-			return "", fmt.Errorf("missing name2")
-		}
 
 		// create the JWT
 
@@ -159,10 +162,11 @@ func main() {
 			return "", fmt.Errorf("json encode: %w", err)
 		}
 
-		req, err := http.NewRequest(http.MethodPost, *ccxURL+"/jwt-login", &buf)
+		req, err := http.NewRequest(http.MethodPost, authURL.JoinPath("jwt-login").String(), &buf)
 		if err != nil {
 			return "", fmt.Errorf("make HTTP request: %w", err)
 		}
+		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
@@ -173,11 +177,16 @@ func main() {
 		// check that the JWT was accepted
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			if err != nil {
+				return "", fmt.Errorf("CCX post: status code: %d (read body: %w)", resp.StatusCode, err)
+			}
 			return "", fmt.Errorf("CCX post: status code: %d\n%s", resp.StatusCode, body)
 		}
 
-		return fmt.Sprintf("%s/jwt-login?jwt=%s&issuer=%s", *ccxURL, token, *cloud), nil
+		loginURL := authURL.JoinPath("jwt-login")
+		loginURL.RawQuery = url.Values{"jwt": {token}, "issuer": {*cloud}}.Encode()
+		return loginURL.String(), nil
 	}
 
 	mux.HandleFunc("POST /login-to-ccx", func(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +205,7 @@ func main() {
 	mux.HandleFunc("POST /embed-ccx", func(w http.ResponseWriter, r *http.Request) {
 		loginURL, err := makeLoginURL(r)
 		if err != nil {
-			http.Error(w, "login: "+err.Error(), http.StatusBadGateway)
+			sendError(w, "login", err)
 			return
 		}
 
@@ -204,8 +213,16 @@ func main() {
 		// is not a top-level navigation, so the browser rejects the session
 		// cookie unless CCX is configured with SESSION_COOKIE_SAMESITE=none
 
+		body, err := json.Marshal(map[string]string{"url": loginURL})
+		if err != nil {
+			http.Error(w, "encode response: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"url": loginURL})
+		if _, err := w.Write(body); err != nil {
+			slog.Error("write response", "err", err)
+		}
 	})
 
 	// serve

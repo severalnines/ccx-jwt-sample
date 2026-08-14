@@ -20,15 +20,15 @@
 
   <form id="login-form" method="post" action="/login-to-ccx">
     <p><input type="text" name="userid" placeholder="user-id" required> (pretend that the user is already logged in with this ID)</p>
-    <p><input type="text" name="name1" placeholder="user-firstname" required></p>
-    <p><input type="text" name="name2" placeholder="user-lastname" required></p>
+    <p><input type="text" name="name1" placeholder="user-firstname"></p>
+    <p><input type="text" name="name2" placeholder="user-lastname"></p>
     <p>
       <button type="submit">login (redirect)</button>
       <button type="button" id="iframe-login">login (iframe)</button>
     </p>
   </form>
 
-  <iframe id="ccx"></iframe>
+  <iframe id="ccx" title="CCX user interface"></iframe>
 
   <script>
     document.getElementById('iframe-login').addEventListener('click', async () => {
