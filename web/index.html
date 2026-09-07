@@ -7,30 +7,268 @@
 
   <meta name="description" content="Afero">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="theme-color" content="rgb(118, 145, 158)">
+  <meta name="theme-color" content="#3F00FF">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;800;900&display=swap" rel="stylesheet">
 
   <style>
+    :root {
+      --pink: #FF00C3;
+      --blue: #3F00FF;
+      --black: #000216;
+      --light-blue: #EFF4FF;
+      --light-pink: #FFF0FC;
+      --grey: #C4C4C4;
+    }
+
     html, body { height: 100%; margin: 0; }
-    body { display: flex; flex-direction: column; padding: 8px; box-sizing: border-box; }
-    #ccx { flex: 1; width: 100%; border: 1px solid rgb(118, 145, 158); }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      box-sizing: border-box;
+      font-family: "Nunito Sans", sans-serif;
+      font-weight: 400;
+      color: var(--black);
+      background: #fff;
+    }
+
+    h1 {
+      font-weight: 900;
+      font-size: 20px;
+      margin: 0 0 16px;
+      color: var(--black);
+    }
+
+    h1 span { color: var(--blue); }
+
+    .section-label {
+      font-weight: 800;
+      margin: 16px 0 4px;
+    }
+
+    input[type=text] {
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--black);
+      border: 1px solid var(--grey);
+      border-radius: 4px;
+      padding: 6px 8px;
+      box-sizing: border-box;
+    }
+
+    input[type=text]:focus {
+      outline: none;
+      border-color: var(--blue);
+    }
+
+    button {
+      font-family: inherit;
+      font-weight: 800;
+      font-size: 14px;
+      border-radius: 4px;
+      padding: 8px 16px;
+      cursor: pointer;
+      border: 1px solid var(--grey);
+      background: #fff;
+      color: var(--black);
+    }
+
+    button:hover { border-color: var(--blue); color: var(--blue); }
+
+    button[type=submit], #iframe-login, #newtab-login {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+
+    button[type=submit]:hover, #iframe-login:hover, #newtab-login:hover {
+      background: var(--pink);
+      border-color: var(--pink);
+      color: #fff;
+    }
+
+    #ccx { flex: 1; width: 100%; border: 1px solid var(--grey); border-radius: 4px; }
+
+    #jwt-payload {
+      font-family: monospace;
+      background: var(--light-blue);
+      border: 1px solid var(--grey);
+      border-radius: 4px;
+      padding: 8px;
+      margin: 8px 0;
+      width: 100%;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    #ccx-request {
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: var(--light-pink);
+      border: 1px solid var(--grey);
+      border-radius: 4px;
+      padding: 8px;
+      margin: 8px 0;
+    }
+    .org-row input { width: 30%; }
   </style>
 </head>
 
 <body>
 
+  <h1>CCX <span>JWT</span> sample</h1>
+
   <form id="login-form" method="post" action="/login-to-ccx">
     <p><input type="text" name="userid" placeholder="user-id" required> (pretend that the user is already logged in with this ID)</p>
     <p><input type="text" name="name1" placeholder="user-firstname"></p>
     <p><input type="text" name="name2" placeholder="user-lastname"></p>
+
+    <p class="section-label">
+      Organizations (added to the JWT "org" claim):
+      <button type="button" id="add-org">add org</button>
+    </p>
+    <div id="orgs-list"></div>
+
+    <p class="section-label">
+      JWT payload that will be sent:
+      <button type="button" id="regenerate-payload">regenerate</button>
+    </p>
+    <p><textarea id="jwt-payload" name="payload" rows="8">loading...</textarea></p>
+
+    <p class="section-label">Request that will be posted to CCX (contains the signed JWT plus first/last name):</p>
+    <pre id="ccx-request">(not generated yet)</pre>
+
     <p>
       <button type="submit">login (redirect)</button>
       <button type="button" id="iframe-login">login (iframe)</button>
+      <button type="button" id="newtab-login">login (new tab)</button>
     </p>
   </form>
 
   <iframe id="ccx" title="CCX user interface"></iframe>
 
   <script>
+    let issuer = '';
+    let payloadEdited = false;
+
+    function randomUUID() {
+      // crypto.randomUUID() is only available in secure contexts (HTTPS or
+      // localhost); fall back to a non-cryptographic UUIDv4 otherwise.
+      if (crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    function addOrgRow() {
+      const row = document.createElement('p');
+      row.className = 'org-row';
+      row.innerHTML = `
+        <input type="text" class="org-id" placeholder="org_id">
+        <input type="text" class="org-name" placeholder="name">
+        <input type="text" class="org-role" placeholder="role">
+        <button type="button" class="remove-org">remove</button>
+      `;
+
+      row.querySelectorAll('input').forEach(el => {
+        el.addEventListener('input', () => {
+          if (!payloadEdited) {
+            regeneratePayload();
+          }
+        });
+      });
+
+      row.querySelector('.remove-org').addEventListener('click', () => {
+        row.remove();
+        if (!payloadEdited) {
+          regeneratePayload();
+        }
+      });
+
+      document.getElementById('orgs-list').appendChild(row);
+    }
+
+    function collectOrgs() {
+      return Array.from(document.querySelectorAll('.org-row')).map(row => ({
+        org_id: row.querySelector('.org-id').value,
+        name: row.querySelector('.org-name').value,
+        role: row.querySelector('.org-role').value,
+      })).filter(org => org.org_id || org.name || org.role);
+    }
+
+    function currentPayload() {
+      const userid = document.querySelector('#login-form [name=userid]').value;
+      const now = Math.floor(Date.now() / 1000);
+      const payload = {
+        iss: issuer,
+        sub: userid,
+        jti: randomUUID(),
+        iat: now,
+        exp: now + 15 * 60,
+      };
+
+      const orgs = collectOrgs();
+      if (orgs.length) {
+        payload.org = orgs;
+      }
+
+      return payload;
+    }
+
+    function regeneratePayload() {
+      document.getElementById('jwt-payload').value = JSON.stringify(currentPayload(), null, 2);
+      payloadEdited = false;
+      updateCcxRequestPreview();
+    }
+
+    async function updateCcxRequestPreview() {
+      const form = document.getElementById('login-form');
+      const preview = document.getElementById('ccx-request');
+
+      const resp = await fetch('/sign-jwt', {
+        method: 'POST',
+        body: new URLSearchParams(new FormData(form)),
+      });
+      if (!resp.ok) {
+        preview.textContent = await resp.text();
+        return;
+      }
+
+      preview.textContent = JSON.stringify(await resp.json(), null, 2);
+    }
+
+    fetch('/cloud-name')
+      .then(resp => resp.json())
+      .then(data => {
+        issuer = data.issuer;
+        regeneratePayload();
+      });
+
+    document.getElementById('regenerate-payload').addEventListener('click', regeneratePayload);
+    document.getElementById('add-org').addEventListener('click', addOrgRow);
+
+    document.getElementById('jwt-payload').addEventListener('input', () => {
+      payloadEdited = true;
+      updateCcxRequestPreview();
+    });
+
+    document.querySelector('#login-form [name=userid]').addEventListener('input', () => {
+      if (!payloadEdited) {
+        regeneratePayload();
+      }
+    });
+
+    document.querySelector('#login-form [name=name1]').addEventListener('input', updateCcxRequestPreview);
+    document.querySelector('#login-form [name=name2]').addEventListener('input', updateCcxRequestPreview);
+
     document.getElementById('iframe-login').addEventListener('click', async () => {
       const form = document.getElementById('login-form');
       if (!form.reportValidity()) {
@@ -48,6 +286,20 @@
 
       const { url } = await resp.json();
       document.getElementById('ccx').src = url;
+    });
+
+    document.getElementById('newtab-login').addEventListener('click', () => {
+      const form = document.getElementById('login-form');
+      if (!form.reportValidity()) {
+        return;
+      }
+
+      // submit as a top-level navigation (like the redirect flow), but into
+      // a new tab/window, so the session cookie is still accepted with the
+      // browser's default SameSite=Lax
+      form.target = '_blank';
+      form.requestSubmit();
+      form.target = '';
     });
   </script>
 
