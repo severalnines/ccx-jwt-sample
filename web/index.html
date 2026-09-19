@@ -22,9 +22,13 @@
     <p><input type="text" name="userid" placeholder="user-id" required> (pretend that the user is already logged in with this ID)</p>
     <p><input type="text" name="name1" placeholder="user-firstname"></p>
     <p><input type="text" name="name2" placeholder="user-lastname"></p>
+    <p><input type="text" name="orgid" placeholder="org-id"> (optional; adds an "org" claim to the JWT)</p>
+    <p><input type="text" name="orgname" placeholder="org-name"></p>
+    <p><input type="text" name="orgrole" placeholder="org-role"></p>
     <p>
       <button type="submit">login (redirect)</button>
       <button type="button" id="iframe-login">login (iframe)</button>
+      <button type="button" id="newtab-login">login (new tab)</button>
     </p>
   </form>
 
@@ -48,6 +52,20 @@
 
       const { url } = await resp.json();
       document.getElementById('ccx').src = url;
+    });
+
+    document.getElementById('newtab-login').addEventListener('click', () => {
+      const form = document.getElementById('login-form');
+      if (!form.reportValidity()) {
+        return;
+      }
+
+      // submit as a top-level navigation (like the redirect flow), but into
+      // a new tab/window, so the session cookie is still accepted with the
+      // browser's default SameSite=Lax
+      form.target = '_blank';
+      form.requestSubmit();
+      form.target = '';
     });
   </script>
 
