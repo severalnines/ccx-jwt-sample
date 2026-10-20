@@ -47,7 +47,13 @@ func privateRSAKeyFromPEM(b []byte) (*rsa.PrivateKey, error) {
 	return x509.ParsePKCS1PrivateKey(block.Bytes)
 }
 
-func createJWT(issuer, subject string, exp time.Duration, key *rsa.PrivateKey) (string, error) {
+type orgClaim struct {
+	OrgID string `json:"org_id"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+}
+
+func createJWT(issuer, subject string, org *orgClaim, exp time.Duration, key *rsa.PrivateKey) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss": issuer,
@@ -55,6 +61,9 @@ func createJWT(issuer, subject string, exp time.Duration, key *rsa.PrivateKey) (
 		"jti": uuid.NewString(),
 		"iat": now.Unix(),
 		"exp": now.Add(exp).Unix(),
+	}
+	if org != nil {
+		claims["org"] = []orgClaim{*org}
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
 }
@@ -141,9 +150,19 @@ func main() {
 		name1 := r.Form.Get("name1")
 		name2 := r.Form.Get("name2")
 
+		// org is optional
+		var org *orgClaim
+		if orgID := r.Form.Get("orgid"); orgID != "" {
+			org = &orgClaim{
+				OrgID: orgID,
+				Name:  r.Form.Get("orgname"),
+				Role:  r.Form.Get("orgrole"),
+			}
+		}
+
 		// create the JWT
 
-		token, err := createJWT(*cloud, userID, 15*time.Minute, privKey)
+		token, err := createJWT(*cloud, userID, org, 15*time.Minute, privKey)
 		if err != nil {
 			return "", fmt.Errorf("create JWT: %w", err)
 		}
